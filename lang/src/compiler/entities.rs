@@ -3,37 +3,16 @@
 use std::collections::{HashMap, LinkedList};
 use std::collections::hash_map::Entry;
 use rayon::prelude::*;
+use super::execute::*;
 use super::Context;
 use hct::ast::*;
 use vmf::*;
-
-/// Generates the connection nodes correspoding to a script statement
-fn stmt_nodes(ctx: &Context, stmt: Statement) -> LinkedList<Connection> {
-    match stmt {
-        Statement::Call { path, arg } => {
-            let mut lst = LinkedList::new();
-            lst.push_back(Connection {
-                event: ctx.event().expect("not in event scope"),
-                entity: ctx.entity(&path),
-                method: ctx.method(&path),
-                arg: arg,
-                delay: ctx.delay().unwrap_or(0.0),
-                once: false,
-            });
-            lst
-        },
-        Statement::Delay { body, time } => {
-            let ctx = ctx.with_delay(time);
-            body.into_par_iter().flat_map(|stmt| stmt_nodes(&ctx, stmt)).collect()
-        }
-    }
-}
 
 /// Adds a block to be executed on map spawn
 pub fn add_auto(ctx: &Context, entities: &mut HashMap<String, Entity>, body: LinkedList<Statement>) {
     let mut connections: LinkedList<_> =
         body.into_par_iter()
-            .flat_map(|stmt| stmt_nodes(&ctx.auto(), stmt))
+            .flat_map(|stmt| stmt_nodes(stmt, &ctx.auto()))
             .collect();
 
     // The empty string can be used without collision risk,
@@ -60,7 +39,7 @@ pub fn add_relay(ctx: &Context, entities: &mut HashMap<String, Entity>, name: St
         classname: "logic_relay".into(),
         targetname: Some(name),
         connections: body.into_par_iter()
-            .flat_map(|stmt| stmt_nodes(&ctx.relay(), stmt))
+            .flat_map(|stmt| stmt_nodes(stmt, &ctx.relay()))
             .collect(),
         .. Default::default()
     });
@@ -70,8 +49,8 @@ pub fn add_relay(ctx: &Context, entities: &mut HashMap<String, Entity>, name: St
 pub fn add_subscriber(ctx: &Context, subscribers: &mut HashMap<String, LinkedList<Connection>>, path: Path, body: LinkedList<Statement>) {
     let mut list = body.into_par_iter()
         .flat_map(|stmt| stmt_nodes(
-            &ctx.subscriber(&path),
-            stmt
+            stmt,
+            &ctx.subscriber(&path)
         ))
         .collect();
 

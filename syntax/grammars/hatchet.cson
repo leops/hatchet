@@ -54,34 +54,6 @@
                 'name': 'punctuation.separator.key-value.hatchet'
     }
     {
-        'match': '(for)\\s+([A-Za-z0-9_\\-\\$@]+)\\s+(in)'
-        'captures':
-            '1':
-                'name': 'keyword.control.hatchet'
-            '2':
-                'name': 'meta.definition.variable.hatchet'
-            '3':
-                'name': 'keyword.control.hatchet'
-    }
-    {
-        'name': 'meta.block.hatchet'
-        'begin': '([A-Za-z0-9_\\-\\$@]+)\\s*(\\{)'
-        'beginCaptures':
-            '1':
-                'name': 'entity.other.attribute-name.hatchet'
-            '2':
-                'name': 'punctuation.section.block.begin.hatchet'
-        'patterns': [
-            {
-                'include': '$base'
-            }
-        ]
-        'end': '\\}'
-        'endCaptures':
-            '0':
-                'name': 'punctuation.section.block.end.hatchet'
-    }
-    {
         'include': '#statements'
     }
     {
@@ -147,6 +119,34 @@
                         'include': '#statements'
                     }
                 ]
+                'endCaptures':
+                    '0':
+                        'name': 'punctuation.section.block.end.hatchet'
+            }
+            {
+                'match': '(for)\\s+([A-Za-z0-9_\\-\\$@]+)\\s+(in)'
+                'captures':
+                    '1':
+                        'name': 'keyword.control.hatchet'
+                    '2':
+                        'name': 'meta.definition.variable.hatchet'
+                    '3':
+                        'name': 'keyword.control.hatchet'
+            }
+            {
+                'name': 'meta.block.hatchet'
+                'begin': '([A-Za-z0-9_\\-\\$@]+)\\s*(\\{)'
+                'beginCaptures':
+                    '1':
+                        'name': 'entity.other.attribute-name.hatchet'
+                    '2':
+                        'name': 'punctuation.section.block.begin.hatchet'
+                'patterns': [
+                    {
+                        'include': '$base'
+                    }
+                ]
+                'end': '\\}'
                 'endCaptures':
                     '0':
                         'name': 'punctuation.section.block.end.hatchet'

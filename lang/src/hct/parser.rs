@@ -16,16 +16,17 @@ impl_rdp! {
     grammar! {
         file = { soi ~ item* ~ eoi }
 
-        item = { auto | relay | binding | iterator | event }
+        item = { auto | relay | binding | iterator_item | event }
         auto = { ["auto"] ~ ["{"] ~ statement* ~ block_end }
         relay = { ["relay"] ~ name ~ ["{"] ~ statement* ~ block_end }
-        iterator = { ["for"] ~ name ~ ["in"] ~ name ~ ["{"] ~ item* ~ block_end }
+        iterator_item = { ["for"] ~ name ~ ["in"] ~ name ~ ["{"] ~ item* ~ block_end }
         binding = { ["let"] ~ name ~ ["="] ~ expression }
         event = { path ~ ["{"] ~ statement* ~ block_end }
 
-        statement = { call | delay }
+        statement = { call | delay | iterator_stmt }
         call = { path ~ ["("] ~ (string | number)? ~ [")"] }
         delay = { ["delay"] ~ number ~ ["{"] ~ statement* ~ block_end }
+        iterator_stmt = { ["for"] ~ name ~ ["in"] ~ name ~ ["{"] ~ statement* ~ block_end }
 
         expression = { array | map | path }
         array = { ["["] ~ ( expression ~ ( [","] ~ expression )* ~ [","]? )? ~ array_end }
@@ -58,6 +59,21 @@ impl_rdp! {
 
         _items(&self) -> BinaryHeap<Item> {
             (_: item, head: _item(), mut tail: _items()) => {
+                // Emit a separate binding node for named entities,
+                // to hoist up the declaration in the context
+                match head {
+                    Item::Relay { ref name, .. } => {
+                        tail.push(Item::Binding {
+                            name: name.clone(),
+                            value: Expression::Entity(
+                                name.clone()
+                            ),
+                        });
+                    },
+
+                    _ => {}
+                }
+
                 tail.push(head);
                 tail
             },
@@ -92,11 +108,11 @@ impl_rdp! {
                     value: value,
                 }
             },
-            (_: iterator, &var: name, &array: name, items: _items()) => {
+            (_: iterator_item, &var: name, &array: name, body: _items()) => {
                 Item::Iterator {
                     var: var.into(),
                     array: array.into(),
-                    items: items,
+                    body: body,
                 }
             }
         }
@@ -121,6 +137,13 @@ impl_rdp! {
             (_: delay, &time: number, body: _block()) => {
                 Statement::Delay {
                     time: time.parse().expect("invalid number"),
+                    body: body,
+                }
+            },
+            (_: iterator_stmt, &var: name, &array: name, body: _block()) => {
+                Statement::Iterator {
+                    var: var.into(),
+                    array: array.into(),
                     body: body,
                 }
             }

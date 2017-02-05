@@ -35,7 +35,7 @@ pub enum Item {
     Iterator {
         var: String,
         array: String,
-        items: BinaryHeap<Item>,
+        body: BinaryHeap<Item>,
     },
 }
 
@@ -123,8 +123,15 @@ pub enum Statement {
         path: Path,
         arg: Literal,
     },
+
     Delay {
         time: f32,
+        body: LinkedList<Statement>,
+    },
+
+    Iterator {
+        var: String,
+        array: String,
         body: LinkedList<Statement>,
     },
 }

@@ -99,14 +99,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Mutate this context to add a new entity binding
-    pub fn register_ent(&mut self, key: String) {
-        self.set_binding(
-            key.clone(),
-            Expression::Entity(key)
-        );
-    }
-
     fn resolve_entity(&self, path: &Path) -> Expression {
         match path {
             &Path::Deref(ref obj, ref prop) => match self.resolve_entity(obj.as_ref()) {
