@@ -57,7 +57,7 @@ pub fn add_auto(ctx: &Context, entities: &mut HashMap<String, Entity>, body: Lin
 /// Adds a block to be executed when a relay is triggered
 pub fn add_relay(ctx: &Context, entities: &mut HashMap<String, Entity>, name: String, body: LinkedList<Statement>) {
     entities.insert(name.clone(), Entity {
-        classname: "logic_auto".into(),
+        classname: "logic_relay".into(),
         targetname: Some(name),
         connections: body.into_par_iter()
             .flat_map(|stmt| stmt_nodes(&ctx.relay(), stmt))
