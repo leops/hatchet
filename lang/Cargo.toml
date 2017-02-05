@@ -1,0 +1,8 @@
+[package]
+name = "hatchet"
+version = "0.1.0"
+authors = ["Léo-Paul COUTURIER <root@leops.me>"]
+
+[dependencies]
+pest = "*"
+rayon = "*"
