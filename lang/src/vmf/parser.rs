@@ -2,7 +2,7 @@
 
 use std::collections::LinkedList;
 use pest::prelude::*;
-use super::tt::*;
+use super::ast::*;
 
 impl_rdp! {
     grammar! {

@@ -3,7 +3,7 @@
 use std::collections::{HashMap, LinkedList, BinaryHeap};
 use rayon::prelude::*;
 
-use vmf::ast::*;
+use vmf::ir::*;
 use hct::ast::*;
 use super::context::*;
 use super::entities::*;

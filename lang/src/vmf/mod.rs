@@ -1,14 +1,14 @@
 pub mod parser;
-pub mod tt;
 pub mod ast;
+pub mod ir;
 
 use std::io::prelude::*;
 use std::path::Path;
 use std::fs::File;
 
 use pest::prelude::*;
-pub use self::tt::*;
 pub use self::ast::*;
+pub use self::ir::*;
 
 // Parse a VMF file, returning an IR representation
 pub fn parse_file<P>(path: P) -> MapFile where P: AsRef<Path> {
