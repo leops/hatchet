@@ -39,7 +39,7 @@ auto {
 }
 ```
 
-Finally, like any programming language Hatchet allows the definition of variable and loops:
+Like any programming language Hatchet allows the definition of variable and loops:
 ```hatchet
 let buttons = [{
     button: button1_btn,
@@ -62,6 +62,19 @@ for btn in buttons {
         laser:counter.Subtract()
     }
 }
+```
+
+It also lets you interact directly with the entities in the map, by manually editing their properties
+or using built-in functions:
+```hatchet
+for i in range(0, 10) {
+    let mesh = clone(mesh_template)
+    mesh.origin.x = rand(-3175, 3175)
+    mesh.origin.y = rand(-3175, 3175)
+    mesh.origin.z = rand(-3175, 3175)
+}
+
+remove(mesh_template)
 ```
 
 # Modules

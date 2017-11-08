@@ -1,13 +1,12 @@
-pub mod parser;
-pub mod ast;
 pub mod ir;
 
 use std::io::prelude::*;
 use std::path::Path;
 use std::fs::File;
+use vmfparser::*;
 
-use pest::prelude::*;
-pub use self::ast::*;
+pub use vmfparser::ast::*;
+pub use vmfparser::parser::*;
 pub use self::ir::*;
 
 // Parse a VMF file, returning an IR representation
@@ -16,10 +15,12 @@ pub fn parse_file<P>(path: P) -> MapFile where P: AsRef<Path> {
     let mut s = String::new();
     f.read_to_string(&mut s).expect("could not read file");
 
-    let mut parser = parser::Rdp::new(StringInput::new(&s));
+    let parse_start = timer_start!();
+    let ast = parse(&s).unwrap();
 
-    assert!(parser.file());
-    assert!(parser.end());
+    let trans_start = timer_chain!(parse_start, time, "Parsing time: {}", time);
+    let res = MapFile::from_ast(ast);
 
-    MapFile::from_tt(parser.tt())
+    timer_end!(trans_start, time, "Loading time: {}", time);
+    res
 }

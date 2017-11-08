@@ -1,47 +1,53 @@
 //! Defines the VMF intermediate representation, a more opinionated version of the AST hierarchy
 
-use std::collections::{LinkedList, BTreeMap, BTreeSet};
-use pest::prelude::*;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::iter::once;
+
 use rayon::prelude::*;
-use hct::ast::Literal;
-use hct::parser;
+use synom::IResult;
+
+use atom::Atom;
+use hct::parser::number;
+use super::parser::string;
 use super::ast::*;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Connection {
-    pub event: String,
-    pub entity: String,
-    pub method: String,
-    pub arg: Literal,
-    pub delay: f32,
+    pub event: Atom,
+    pub entity: Atom,
+    pub method: Atom,
+    pub arg: String,
+    pub delay: f64,
     pub once: bool,
 }
 
 impl Connection {
-    fn from_value(prop: &Property) -> Connection {
-        let evt: Vec<_> = prop.value.split('\x1b').collect();
+    fn from_value(prop: &Property<Atom>) -> Connection {
+        let mut evt: Vec<_> = prop.value.split('\x1b').collect();
+        if evt.len() == 1 {
+            evt = prop.value.split(',').collect();
+        }
+
+        assert_eq!(evt.len(), 5, "invalid event: {:?}", evt);
         Connection {
             event: prop.key.clone(),
             entity: evt[0].into(),
             method: evt[1].into(),
             arg: {
-                let mut parser = parser::Rdp::new(
-                    StringInput::new(evt[2])
-                );
-
-                if parser.string() || parser.number() {
-                    assert!(parser.end());
-                    parser._literal()
+                if let IResult::Done(_, val) = number(evt[2]) {
+                    val.to_string()
+                } else if let IResult::Done(_, val) = string(evt[2]) {
+                    val.into()
                 } else {
-                    Literal::Void
+                    "".into()
                 }
             },
             delay: evt[3].parse().expect("invalid number"),
             once: evt[4] == "1"
         }
     }
-
-    pub fn into_value(self) -> Property {
+    pub fn into_value(self) -> Property<Atom> {
         Property {
             key: self.event,
             value: format!(
@@ -54,41 +60,52 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct Entity {
-    pub classname: String,
-    pub targetname: Option<String>,
-    pub properties: BTreeMap<String, String>,
-    pub connections: LinkedList<Connection>,
-    pub body: LinkedList<Block>,
+    pub classname: Atom,
+    pub targetname: Option<Atom>,
+    pub properties: HashMap<Atom, String>,
+    pub connections: Vec<Connection>,
+    pub body: Vec<Block<Atom>>,
+    pub clones: u64,
+}
+
+impl PartialEq for Entity {
+    fn eq(&self, other: &Entity) -> bool {
+        self.classname == other.classname &&
+        self.targetname == other.targetname &&
+        self.properties == other.properties &&
+        self.connections == other.connections &&
+        self.clones == other.clones
+    }
 }
 
 impl Entity {
-    fn from_value(block: &Block) -> Option<Entity> {
-        if block.name == "entity" {
+    fn from_value(block: &Block<Atom>) -> Option<Entity> {
+        if block.name == hct_atom!("entity") {
             let mut ent = Entity::default();
-            for prop in block.props.iter() {
+            for prop in &block.props {
                 match prop.key.as_ref() {
                     "classname" => {
-                        ent.classname = prop.value.clone();
+                        ent.classname = Atom::from(prop.value.clone());
                     },
                     "targetname" if !prop.value.is_empty() => {
-                        ent.targetname = Some(prop.value.clone());
+                        ent.targetname = Some(Atom::from(prop.value.clone()));
                     },
                     _ => {
                         ent.properties.insert(prop.key.clone(), prop.value.clone());
                     }
                 }
             }
-            for block in block.blocks.iter() {
-                if block.name == "connections" {
-                    for prop in block.props.iter() {
-                        ent.connections.push_back(
+            for block in &block.blocks {
+                if block.name == hct_atom!("connections") {
+                    for prop in &block.props {
+                        ent.connections.push(
                             Connection::from_value(prop)
                         );
                     }
                 } else {
-                    ent.body.push_back(block.clone());
+                    ent.body.push(block.clone());
                 }
             }
 
@@ -97,10 +114,9 @@ impl Entity {
             None
         }
     }
-
-    pub fn into_value(self) -> Block {
+    pub fn into_value(self) -> Block<Atom> {
         Block {
-            name: "entity".into(),
+            name: hct_atom!("entity"),
             props: {
                 self.properties.into_iter()
                     .map(|(key, value)| Property {
@@ -109,15 +125,15 @@ impl Entity {
                     .chain(
                         self.targetname.into_iter()
                             .map(|name| Property {
-                                key: "targetname".into(),
-                                value: name,
+                                key: hct_atom!("targetname"),
+                                value: name.to_string(),
                             })
                     )
                     .chain(
-                        ::std::iter::once(
+                        once(
                             Property {
-                                key: "classname".into(),
-                                value: self.classname
+                                key: hct_atom!("classname"),
+                                value: self.classname.to_string(),
                             }
                         )
                     )
@@ -126,12 +142,14 @@ impl Entity {
             blocks: {
                 self.body.into_iter()
                     .chain(
-                        ::std::iter::once(
+                        once(
                             Block {
-                                name: "connections".into(),
-                                props: self.connections.into_iter()
-                                    .map(|conn| conn.into_value())
-                                    .collect(),
+                                name: hct_atom!("connections"),
+                                props: {
+                                    self.connections.into_iter()
+                                        .map(|conn| conn.into_value())
+                                        .collect()
+                                },
                                 .. Default::default()
                             }
                         )
@@ -142,7 +160,7 @@ impl Entity {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum InstFile {
     Original(String),
     Compiled(String),
@@ -159,7 +177,7 @@ impl InstFile {
 
 #[derive(Debug)]
 pub enum EntRef {
-    Named(String),
+    Named(Atom),
     Anon(Entity),
 }
 
@@ -189,55 +207,76 @@ impl Ord for Instance {
     }
 }
 
+impl Hash for Instance {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.file.hash(state);
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Script {
+    pub script: String,
+    pub seed: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct MapFile {
-    pub nodes: LinkedList<Block>,
-    // HashMap doesn't support merging
-    pub entities: BTreeMap<String, Entity>,
-    pub scripts: LinkedList<String>,
-    pub instances: BTreeSet<Instance>,
+    pub nodes: Vec<Block<Atom>>,
+    pub entities: HashMap<Atom, Entity>,
+    pub scripts: Vec<Script>,
+    pub instances: HashSet<Instance>,
 }
 
 impl MapFile {
-    pub fn from_tt(tt: LinkedList<Block>) -> MapFile {
-        tt.into_par_iter()
+    pub fn from_ast(tree: Vec<Block<Atom>>) -> MapFile {
+        tree.into_par_iter()
             .fold(
                 MapFile::default,
                 |mut infos, block| {
-                    if let Some(ent) = Entity::from_value(&block) {
-                        match ent.classname.as_ref() {
-                            // Script entities are removed from the AST
-                            "logic_hatchet" => {
-                                infos.scripts.push_back(
-                                    ent.properties.get("script".into())
-                                        .expect("missing script property in logic_hatchet").clone()
-                                );
-                            },
-                            _ => {
-                                // Instances are placed in a separate list,
-                                // used to spawn the sub-compilation threads
-                                if ent.classname == "func_instance" {
-                                    infos.instances.insert(Instance {
-                                        file: InstFile::Original(
-                                            ent.properties.get("file".into())
-                                                .expect("missing file property in func_instance").clone()
-                                        ),
-                                        entity: if let Some(ref targetname) = ent.targetname {
-                                            infos.entities.insert(targetname.clone(), ent.clone());
-                                            EntRef::Named(targetname.clone())
-                                        } else {
-                                            EntRef::Anon(ent.clone())
-                                        },
-                                    });
-                                } else if let Some(ref targetname) = ent.targetname {
+                    match Entity::from_value(&block) {
+                        // Script entities are removed from the AST
+                        Some(Entity { ref classname, ref properties, .. }) if *classname == hct_atom!("logic_hatchet") => {
+                            infos.scripts.push(Script {
+                                script: properties.get(&hct_atom!("script"))
+                                    .expect("missing script in logic_hatchet").clone(),
+                                seed: properties.get(&hct_atom!("seed"))
+                                    .map(|seed| {
+                                        seed.parse::<usize>().expect("seed is not a valid integer")
+                                    })
+                                    .unwrap_or_else(|| {
+                                        warn!("logic_hatchet with no seed, using 0");
+                                        0
+                                    }),
+                            });
+                        },
+
+                        // Instances are placed in a separate list,
+                        // used to spawn the sub-compilation threads
+                        Some(ref ent) if ent.classname == hct_atom!("func_instance") => {
+                            infos.instances.insert(Instance {
+                                file: InstFile::Original(
+                                    ent.properties.get(&hct_atom!("file"))
+                                        .expect("missing file property in func_instance").clone()
+                                ),
+                                entity: if let Some(ref targetname) = ent.targetname {
                                     infos.entities.insert(targetname.clone(), ent.clone());
+                                    EntRef::Named(targetname.clone())
                                 } else {
-                                    infos.nodes.push_back(block);
-                                }
-                            }
-                        }
-                    } else {
-                        infos.nodes.push_back(block);
+                                    EntRef::Anon(ent.clone())
+                                },
+                            });
+                        },
+
+                        Some(ref ent @ Entity { targetname: Some(_), .. }) => {
+                            infos.entities.insert(
+                                ent.targetname.clone().unwrap(),
+                                ent.clone(),
+                            );
+                        },
+
+                        _ => {
+                            infos.nodes.push(block);
+                        },
                     }
 
                     infos
@@ -248,7 +287,6 @@ impl MapFile {
                 MapFile::merge
             )
     }
-
     fn merge(a: MapFile, mut b: MapFile) -> MapFile {
         MapFile {
             nodes: {
@@ -258,7 +296,7 @@ impl MapFile {
             },
             entities: {
                 let mut map = a.entities;
-                map.append(&mut b.entities);
+                map.extend(b.entities);
                 map
             },
             scripts: {
@@ -268,7 +306,7 @@ impl MapFile {
             },
             instances: {
                 let mut lst = a.instances;
-                lst.append(&mut b.instances);
+                lst.extend(b.instances);
                 lst
             },
         }

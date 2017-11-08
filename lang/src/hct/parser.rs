@@ -1,221 +1,375 @@
-//! Defines the Hatchet parser, using the pest library to tokenize the text input and generate an AST
+use synom::*;
+use synom::space::*;
+use super::ast::*;
+use super::expression::*;
+use atom::Atom;
 
-use std::collections::{LinkedList, HashMap, BinaryHeap};
-use pest::prelude::*;
-use hct::ast::*;
+fn position<P>(input: &str, predicate: P) -> Option<usize> where P: Fn(&str) -> IResult<&str, &str> {
+    for o in 0..input.len() {
+        if let IResult::Done(_, _) = predicate(&input[o..]) {
+            return Some(o);
+        }
+    }
+
+    None
+}
+
+macro_rules! take_till {
+    ($i:expr, $submac:ident!( $($args:tt)* )) => {
+        take_till!($i, |c| $submac!(c, $($args)*))
+    };
+    ($i:expr, $f:expr) => {
+        match position($i, $f) {
+            Some(0) | None => IResult::Error,
+            Some(n) => IResult::Done(&$i[n..], &$i[..n]),
+        }
+    };
+}
+
+named!(
+    pub string -> Vec<StringPart>,
+    delimited!(
+        punct!("\""),
+        many0!(alt!(
+            delimited!(
+                punct!("${"),
+                expression,
+                punct!("}")
+            ) => { StringPart::Expression } |
+
+            take_till!(alt!(
+                tag!("\"") | tag!("${")
+            )) => { |s| {
+                StringPart::String(String::from(s))
+            }}
+        )),
+        punct!("\"")
+    )
+);
+
+pub fn digits(input: &str) -> IResult<&str, &str> {
+    let input = skip_whitespace(input);
+    let input_length = input.len();
+    if input_length == 0 {
+        return IResult::Error
+    }
+
+    for (idx, item) in input.chars().enumerate() {
+        match item {
+            '0'...'9' => {},
+            _ => {
+                if idx == 0 {
+                    return IResult::Error
+                } else {
+                    return IResult::Done(&input[idx..], &input[..idx])
+                }
+            },
+        }
+    }
+
+    IResult::Done(&input[input_length..], input)
+}
+
+macro_rules! recognize (
+    ($i:expr, $submac:ident!( $($args:tt)* )) => ({
+        match $submac!($i, $($args)*) {
+            IResult::Done(i, _) => {
+                let index = $i.len() - i.len();
+                IResult::Done(i, &$i[..index])
+            },
+            IResult::Error => IResult::Error,
+        }
+    });
+);
+
+named!(
+    pub number -> f64,
+    map!(
+        recognize!(
+            tuple!(
+                option!(alt!(punct!("+") | punct!("-"))),
+                alt!(
+                    delimited!(digits, punct!("."), option!(digits)) |
+                    delimited!(option!(digits), punct!("."), digits) |
+                    digits
+                ),
+                option!(tuple!(
+                    alt!(punct!("e") | punct!("E")),
+                    option!(alt!(punct!("+") | punct!("-"))),
+                    digits
+                ))
+            )
+        ),
+        |v| skip_whitespace(v).parse().unwrap()
+    )
+);
+
+pub fn name(input: &str) -> IResult<&str, Atom> {
+    let input = skip_whitespace(input);
+    let input_length = input.len();
+    if input_length == 0 {
+        return IResult::Error
+    }
+
+    for (idx, item) in input.chars().enumerate() {
+        match item {
+            'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' | '$' | '@' => {},
+            _ => {
+                if idx == 0 {
+                    return IResult::Error
+                } else {
+                    return IResult::Done(&input[idx..], Atom::from(&input[..idx]))
+                }
+            },
+        }
+    }
+
+    match input {
+        "auto" | "relay" | "delay" |
+        "while" | "for" | "in" | "if" | "else" | "let" => IResult::Error,
+        name => IResult::Done(&input[input_length..], Atom::from(name)),
+    }
+}
+
+named!(
+    name_chain -> Vec<Atom>,
+    separated_nonempty_list!(
+        punct!("."),
+        name
+    )
+);
 
 #[inline]
-fn fold_path(path: Option<Path>, name: String) -> Option<Path> {
+fn fold_path(path: Option<Path>, name: Atom) -> Option<Path> {
+    let name = Atom::from(name);
     Some(match path {
-        Some(p) => Path::Deref(Box::new(p), name),
+        Some(p) => Path::Deref(box p, name),
         None => Path::Binding(name),
     })
 }
 
-impl_rdp! {
-    grammar! {
-        file = { soi ~ item* ~ eoi }
+named!(
+    path -> Path,
+    do_parse!(
+        inst: option!(terminated!(name_chain, punct!(":"))) >>
+        pat: name_chain >>
+        ({
+            pat.into_iter()
+                .fold(
+                    inst.into_iter()
+                        .flat_map(|v| v)
+                        .fold(None, fold_path)
+                        .map(|p| Path::Instance(box p)),
+                    fold_path
+                )
+                .expect("empty list")
+        })
+    )
+);
 
-        item = { auto | relay | binding | iterator_item | event }
-        auto = { ["auto"] ~ ["{"] ~ statement* ~ block_end }
-        relay = { ["relay"] ~ name ~ ["{"] ~ statement* ~ block_end }
-        iterator_item = { ["for"] ~ name ~ ["in"] ~ name ~ ["{"] ~ item* ~ block_end }
-        binding = { ["let"] ~ name ~ ["="] ~ expression }
-        event = { path ~ ["{"] ~ statement* ~ block_end }
+named!(
+    literal -> Expression,
+    alt!(
+        number => { |val| Expression::Literal(Literal::Number(val)) } |
+        string => { |val|  Expression::Literal(Literal::String(val)) }
+    )
+);
 
-        statement = { call | delay | iterator_stmt }
-        call = { path ~ ["("] ~ (string | number)? ~ [")"] }
-        delay = { ["delay"] ~ number ~ ["{"] ~ statement* ~ block_end }
-        iterator_stmt = { ["for"] ~ name ~ ["in"] ~ name ~ ["{"] ~ statement* ~ block_end }
+named!(
+    call -> Call,
+    do_parse!(
+        path: path >>
+        args: delimited!(
+            punct!("("),
+            terminated_list!(
+                punct!(","),
+                expression
+            ),
+            punct!(")")
+        ) >>
+        (Call { path, args })
+    )
+);
 
-        expression = { array | map | path }
-        array = { ["["] ~ ( expression ~ ( [","] ~ expression )* ~ [","]? )? ~ array_end }
-        map = { ["{"] ~ ( pair ~ ( [","] ~ pair )* ~ [","]? )? ~ block_end }
-        pair = { name ~ [":"] ~ expression }
+named!(
+    array -> Expression,
+    map!(
+        delimited!(
+            punct!("["),
+            terminated_list!(
+                punct!(","),
+                expression
+            ),
+            punct!("]")
+        ),
+        Expression::Array
+    )
+);
 
-        path = @{ inst_name? ~ ent_name }
-        inst_name = @{ name ~ ( ["."] ~ name )* ~ [":"] }
-        ent_name = @{ name ~ ( ["."] ~ name )* }
+named!(
+    map -> Expression,
+    map!(
+        delimited!(
+            punct!("{"),
+            terminated_list!(
+                punct!(","),
+                tuple!(
+                    name,
+                    punct!(":"),
+                    expression
+                )
+            ),
+            punct!("}")
+        ),
+        |val: Vec<_>| Expression::Map(
+            val.into_iter().map(|(a, _, b)| (a, b)).collect()
+        )
+    )
+);
 
-        name = @{ ( ['A'..'Z'] | ['a'..'z'] | ['0'..'9'] | ["_"] | ["-"] | ["$"] | ["@"] )+ }
-        number = @{ ['0'..'9']+ ~ ["."] ~ ['0'..'9']+ | ["."] ~ ['0'..'9']+ | ['0'..'9']+ }
-        string = @{ ["\""] ~ (!["\""] ~ any)* ~ ["\""] }
+named!(
+    pub atomic_expression -> Expression,
+    alt!(
+        delimited!(
+            punct!("("),
+            expression,
+            punct!(")")
+        ) |
+        literal |
+        call => { Expression::Call } |
+        array | map |
+        path => { Expression::Reference }
+    )
+);
 
-        block_end = { ["}"] }
-        array_end = { ["]"] }
-
-        whitespace = _{ [" "] | ["\t"] | ["\u{000C}"] | ["\r"] | ["\n"] }
-        comment = _{ ["//"] ~ (!(["\r"] | ["\n"]) ~ any)* ~ (["\n"] | ["\r\n"] | ["\r"] | eoi) }
-    }
-
-    process! {
-        parse(&self) -> Script {
-            (_: file, items: _items()) => {
-                Script {
-                    items: items,
-                }
-            }
-        }
-
-        _items(&self) -> BinaryHeap<Item> {
-            (_: item, head: _item(), mut tail: _items()) => {
-                // Emit a separate binding node for named entities,
-                // to hoist up the declaration in the context
-                match head {
-                    Item::Relay { ref name, .. } => {
-                        tail.push(Item::Binding {
-                            name: name.clone(),
-                            value: Expression::Entity(
-                                name.clone()
-                            ),
-                        });
-                    },
-
-                    _ => {}
-                }
-
-                tail.push(head);
-                tail
-            },
-            (_: block_end) => {
-                BinaryHeap::new()
-            },
-            () => {
-                BinaryHeap::new()
-            }
-        }
-        _item(&self) -> Item {
-            (_: auto, body: _block()) => {
-                Item::Auto {
-                    body: body,
-                }
-            },
-            (_: relay, &var: name, body: _block()) => {
-                Item::Relay {
-                    name: var.into(),
-                    body: body,
-                }
-            },
-            (_: event, _: path, var: _path(), body: _block()) => {
-                Item::Subscriber {
-                    path: var,
-                    body: body,
-                }
-            },
-            (_: binding, &name: name, _: expression, value: _expression()) => {
-                Item::Binding {
-                    name: name.into(),
-                    value: value,
-                }
-            },
-            (_: iterator_item, &var: name, &array: name, body: _items()) => {
-                Item::Iterator {
-                    var: var.into(),
-                    array: array.into(),
-                    body: body,
-                }
-            }
-        }
-
-        _block(&self) -> LinkedList<Statement> {
-            (_: statement, head: _statement(), mut tail: _block()) => {
-                tail.push_front(head);
-                tail
-            },
-            (_: block_end) => {
-                LinkedList::new()
-            }
-        }
-
-        _statement(&self) -> Statement {
-            (_: call, _:path, path: _path(), arg: _literal()) => {
-                Statement::Call {
-                    path: path,
-                    arg: arg,
-                }
-            },
-            (_: delay, &time: number, body: _block()) => {
-                Statement::Delay {
-                    time: time.parse().expect("invalid number"),
-                    body: body,
-                }
-            },
-            (_: iterator_stmt, &var: name, &array: name, body: _block()) => {
-                Statement::Iterator {
-                    var: var.into(),
-                    array: array.into(),
-                    body: body,
-                }
-            }
-        }
-
-        _expression(&self) -> Expression {
-            (_: array, val: _array()) => {
-                Expression::Array(val)
-            },
-            (_: map, val: _map()) => {
-                Expression::Map(val)
-            },
-            (_: path, val: _path()) => {
-                Expression::Reference(val)
-            }
-        }
-        _array(&self) -> LinkedList<Expression> {
-            (_: expression, head: _expression(), mut tail: _array()) => {
-                tail.push_front(head);
-                tail
-            },
-            (_: array_end) => {
-                LinkedList::new()
-            }
-        }
-        _map(&self) -> HashMap<String, Expression> {
-            (_:pair, &key: name, _: expression, value: _expression(), mut tail: _map()) => {
-                tail.insert(key.into(), value);
-                tail
-            },
-            (_: block_end) => {
-                HashMap::new()
-            }
-        }
-
-        _path(&self) -> Path {
-            (_: inst_name, inst: _name_chain(), _: ent_name, pat: _name_chain()) => {
-                pat.into_iter()
-                    .fold(
-                        inst.into_iter()
-                            .fold(None, fold_path)
-                            .map(|p| Path::Instance(Box::new(p))),
-                        fold_path
-                    )
-                    .expect("empty path")
-            },
-            (_: ent_name, pat: _name_chain()) => {
-                pat.into_iter()
-                    .fold(None, fold_path)
-                    .expect("empty path")
-            }
-        }
-        _name_chain(&self) -> LinkedList<String> {
-            (&head: name, mut tail: _name_chain()) => {
-                tail.push_front(head.into());
-                tail
-            },
-            () => {
-                LinkedList::new()
-            }
-        }
-
-        _literal(&self) -> Literal {
-            (&num: number) => {
-                Literal::Number(num.parse().expect("invalid number"))
-            },
-            (&string: string) => {
-                Literal::String(string[1..string.len()-1].into())
-            },
-            () => {
-                Literal::Void
-            }
-        }
-    }
+fn expression(input: &str) -> IResult<&str, Expression> {
+    EXPRESSION_PARSER.parse(input)
 }
+
+named!(
+    block -> Vec<Statement>,
+    delimited!(
+        punct!("{"),
+        many0!(statement),
+        punct!("}")
+    )
+);
+
+named!(
+    auto -> Statement,
+    do_parse!(
+        keyword!("auto") >>
+        body: block >>
+        (Statement::Auto { body })
+    )
+);
+
+named!(
+    relay -> Statement,
+    do_parse!(
+        keyword!("relay") >>
+        name: name >>
+        body: block >>
+        (Statement::Relay { name, body })
+    )
+);
+
+named!(
+    event -> Statement,
+    do_parse!(
+        path: path >>
+        body: block >>
+        (Statement::Subscriber { path, body })
+    )
+);
+
+named!(
+    delay -> Statement,
+    do_parse!(
+        keyword!("delay") >>
+        time: expression >>
+        body: block >>
+        (Statement::Delay { time, body })
+    )
+);
+
+named!(
+    loop_ -> Statement,
+    do_parse!(
+        keyword!("while") >>
+        condition: expression >>
+        body: block >>
+        (Statement::Loop { condition, body })
+    )
+);
+
+named!(
+    iterator -> Statement,
+    do_parse!(
+        keyword!("for") >>
+        var: name >>
+        keyword!("in") >>
+        array: expression >>
+        body: block >>
+        (Statement::Iterator { var, array, body })
+    )
+);
+
+named!(
+    branch -> Statement,
+    do_parse!(
+        keyword!("if") >>
+        condition: expression >>
+        consequent: block >>
+        alternate: option!(
+            preceded!(
+                keyword!("else"),
+                alt!(
+                    branch => { |alt| vec![ alt ] } |
+                    block
+                )
+            )
+        ) >>
+        (Statement::Branch { condition, consequent, alternate })
+    )
+);
+
+named!(
+    binding -> Statement,
+    do_parse!(
+        keyword!("let") >>
+        name: name >>
+        punct!("=") >>
+        value: expression >>
+        (Statement::Binding { name, value })
+    )
+);
+
+named!(
+    assignment -> Statement,
+    do_parse!(
+        prop: path >>
+        punct!("=") >>
+        value: expression >>
+        (Statement::Assignment { prop, value })
+    )
+);
+
+named!(
+    call_statement -> Statement,
+    map!(call, Statement::Call)
+);
+
+named!(
+    statement -> Statement,
+    alt!(
+        auto | relay | event | delay |
+        loop_ | iterator | branch | binding | assignment |
+        call_statement
+    )
+);
+
+named!(
+    pub script -> Script,
+    map!(many0!(statement), |body| Script { body })
+);

@@ -1,0 +1,5 @@
+@PointClass iconsprite("editor/logic_script.vmt") = logic_hatchet : "Compile-time marker for hatchet scripts"
+[
+    script(string) : "Script" : "" : "Name of a script file to be compiled into this map."
+    seed(integer) : "Seed" : 0 : "Seed of the random number generator"
+]

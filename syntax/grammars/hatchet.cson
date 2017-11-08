@@ -5,55 +5,6 @@
 ]
 'patterns': [
     {
-        'name': 'meta.block.hatchet'
-        'begin': '(auto)\\s*(\\{)'
-        'beginCaptures':
-            '1':
-                'name': 'keyword.reserved.hatchet'
-            '2':
-                'name': 'punctuation.section.block.begin.hatchet'
-        'patterns': [
-            {
-                'include': '#statements'
-            }
-        ]
-        'end': '\\}'
-        'endCaptures':
-            '0':
-                'name': 'punctuation.section.block.end.hatchet'
-    }
-    {
-        'name': 'meta.block.hatchet'
-        'begin': '(relay)\\s+([A-Za-z0-9_\\-\\$@]+)\\s*(\\{)'
-        'beginCaptures':
-            '1':
-                'name': 'keyword.reserved.hatchet'
-            '2':
-                'name': 'variable.other.global.hatchet'
-            '3':
-                'name': 'punctuation.section.block.begin.hatchet'
-        'patterns': [
-            {
-                'include': '#statements'
-            }
-        ]
-        'end': '\\}'
-        'endCaptures':
-            '0':
-                'name': 'punctuation.section.block.end.hatchet'
-    }
-    {
-        'name': 'meta.block.hatchet'
-        'match': '(let)\\s+([A-Za-z0-9_\\-\\$@]+)\\s*='
-        'captures':
-            '1':
-                'name': 'keyword.reserved.hatchet'
-            '2':
-                'name': 'variable.assignment.hatchet'
-            '3':
-                'name': 'punctuation.separator.key-value.hatchet'
-    }
-    {
         'include': '#statements'
     }
     {
@@ -67,41 +18,53 @@
     'statements':
         'patterns': [
             {
-                'match': '([A-Za-z0-9_\\-\\$@]+)(:)'
-                'captures':
-                    '1':
-                        'name': 'variable.other.global.hatchet'
-                    '2':
-                        'name': 'punctuation.definition.separator.hatchet'
-            }
-            {
-                'match': '([A-Za-z0-9_\\-\\$@]+)(\\.)'
-                'captures':
-                    '1':
-                        'name': 'variable.other.global.hatchet'
-                    '2':
-                        'name': 'punctuation.definition.separator.hatchet'
-            }
-            {
-                'name': 'meta.method-call.hatchet'
-                'begin': '([A-Za-z0-9_\\-\\$@]+)(\\()'
+                'name': 'meta.block.hatchet'
+                'begin': '(auto)\\s*(\\{)'
                 'beginCaptures':
                     '1':
-                        'name': 'entity.name.function.hatchet'
+                        'name': 'keyword.reserved.hatchet'
                     '2':
-                        'name': 'punctuation.definition.parameters.begin.hatchet'
+                        'name': 'punctuation.section.block.begin.hatchet'
                 'patterns': [
                     {
-                        'include': '#strings'
-                    }
-                    {
-                        'include': '#numbers'
+                        'include': '$base'
                     }
                 ]
-                'end': '\\)'
+                'end': '\\}'
                 'endCaptures':
                     '0':
-                        'name': 'punctuation.definition.parameters.end.hatchet'
+                        'name': 'punctuation.section.block.end.hatchet'
+            }
+            {
+                'name': 'meta.block.hatchet'
+                'begin': '(relay)\\s+([A-Za-z0-9_\\-\\$@]+)\\s*(\\{)'
+                'beginCaptures':
+                    '1':
+                        'name': 'keyword.reserved.hatchet'
+                    '2':
+                        'name': 'variable.other.global.hatchet'
+                    '3':
+                        'name': 'punctuation.section.block.begin.hatchet'
+                'patterns': [
+                    {
+                        'include': '$base'
+                    }
+                ]
+                'end': '\\}'
+                'endCaptures':
+                    '0':
+                        'name': 'punctuation.section.block.end.hatchet'
+            }
+            {
+                'name': 'meta.block.hatchet'
+                'match': '(let)\\s+([A-Za-z0-9_\\-\\$@]+)\\s*(=)'
+                'captures':
+                    '1':
+                        'name': 'keyword.reserved.hatchet'
+                    '2':
+                        'name': 'variable.assignment.hatchet'
+                    '3':
+                        'name': 'punctuation.separator.key-value.hatchet'
             }
             {
                 'name': 'meta.block.hatchet'
@@ -116,7 +79,7 @@
                 'end': '\\}'
                 'patterns': [
                     {
-                        'include': '#statements'
+                        'include': '$base'
                     }
                 ]
                 'endCaptures':
@@ -134,12 +97,40 @@
                         'name': 'keyword.control.hatchet'
             }
             {
-                'name': 'meta.block.hatchet'
-                'begin': '([A-Za-z0-9_\\-\\$@]+)\\s*(\\{)'
-                'beginCaptures':
+                'match': '(if|else|while)'
+                'captures':
                     '1':
-                        'name': 'entity.other.attribute-name.hatchet'
+                        'name': 'keyword.control.hatchet'
+            }
+            {
+                'match': '([A-Za-z0-9_\\-\\$@]+)(:)'
+                'captures':
+                    '1':
+                        'name': 'variable.other.global.hatchet'
                     '2':
+                        'name': 'punctuation.definition.separator.hatchet'
+            }
+            {
+                'match': '([A-Za-z0-9_\\-\\$@]+)(\\.)'
+                'captures':
+                    '1':
+                        'name': 'variable.other.global.hatchet'
+                    '2':
+                        'name': 'punctuation.definition.separator.hatchet'
+            }
+            {
+                'match': '([A-Za-z0-9_\\-\\$@]+)\s*(=)'
+                'captures':
+                    '1':
+                        'name': 'variable.assignment.hatchet'
+                    '2':
+                        'name': 'punctuation.separator.key-value.hatchet'
+            }
+            {
+                'name': 'meta.block.hatchet'
+                'begin': '\\{'
+                'beginCaptures':
+                    '0':
                         'name': 'punctuation.section.block.begin.hatchet'
                 'patterns': [
                     {
@@ -151,12 +142,37 @@
                     '0':
                         'name': 'punctuation.section.block.end.hatchet'
             }
-            {
-                'include': '#comments'
-            }
         ]
     'expressions':
         'patterns': [
+            {
+                'include': '#strings'
+            }
+            {
+                'include': '#numbers'
+            }
+            {
+                'match': '([><=]?=|&&|\\|\\|+|-|/|\\*|%)'
+                'name': 'punctuation.control.hatchet'
+            }
+            {
+                'name': 'meta.method-call.hatchet'
+                'begin': '([A-Za-z0-9_\\-\\$@]+)(\\()'
+                'beginCaptures':
+                    '1':
+                        'name': 'entity.name.function.hatchet'
+                    '2':
+                        'name': 'punctuation.definition.parameters.begin.hatchet'
+                'patterns': [
+                    {
+                        'include': '#expressions'
+                    }
+                ]
+                'end': '\\)'
+                'endCaptures':
+                    '0':
+                        'name': 'punctuation.definition.parameters.end.hatchet'
+            }
             {
                 'name': 'meta.block.hatchet'
                 'begin': '\\['
@@ -169,6 +185,34 @@
                     }
                 ]
                 'end': '\\]'
+                'endCaptures':
+                    '0':
+                        'name': 'punctuation.section.block.end.hatchet'
+            }
+            {
+                'name': 'meta.block.hatchet'
+                'begin': '\\{'
+                'endCaptures':
+                    '0':
+                        'name': 'punctuation.section.block.begin.hatchet'
+                'patterns': [
+                    {
+                        'match': '([A-Za-z0-9_\\-\\$@]+)\\s*(:)\\s*'
+                        'captures':
+                            '1':
+                                'name': 'variable.assignment.hatchet'
+                            '2':
+                                'name': 'punctuation.separator.key-value.hatchet'
+                    }
+                    {
+                        'include': '#expressions'
+                    }
+                    {
+                        'match': ','
+                        'name': 'meta.delimiter.object.comma.hatchet'
+                    }
+                ]
+                'end': '\\}'
                 'endCaptures':
                     '0':
                         'name': 'punctuation.section.block.end.hatchet'
@@ -196,6 +240,24 @@
                 'beginCaptures':
                     '0':
                         'name': 'punctuation.definition.string.begin.hatchet'
+                'patterns': [
+                    {
+                        'name': 'meta.block.hatchet'
+                        'begin': '\\$(\\{)'
+                        'beginCaptures':
+                            '1':
+                                'name': 'punctuation.section.block.begin.hatchet'
+                        'end': '\\}'
+                        'endCaptures':
+                            '0':
+                                'name': 'punctuation.section.block.end.hatchet'
+                        'patterns': [
+                            {
+                                'include': '#expressions'
+                            }
+                        ]
+                    }
+                ]
                 'end': '"'
                 'endCaptures':
                     '0':
